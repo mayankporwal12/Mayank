@@ -35,7 +35,7 @@ root.innerHTML = `
              <span class="mobile-brand-tag">Your Personal Intelligence</span>
            </span>
         </div>
-        <div class="top-status"><span class="status-dot"></span>DEMO MODE · NO LIVE AI</div>
+        <div class="top-status"><span class="status-dot"></span><span id="ai-mode-label">DEMO MODE · NO LIVE AI</span></div>
       </header>
       <section class="conversation-stage" aria-label="Chat conversation">
         <div class="messages-scroll" id="messages-scroll" aria-live="polite"></div>
@@ -49,7 +49,7 @@ root.innerHTML = `
               </button>
             </div>
           </form>
-           <p class="demo-disclaimer"><strong>Demo mode:</strong> QYRON AI is not connected to a live AI. Replies are illustrative only.</p>
+           <p class="demo-disclaimer" id="demo-disclaimer"><strong>Demo mode:</strong> QYRON AI is not connected to a live AI. Replies are illustrative only.</p>
         </div>
       </section>
     </main>
@@ -68,11 +68,16 @@ const elements = {
   scrim: document.getElementById('mobile-scrim'),
   menu: document.getElementById('mobile-menu'),
   toast: document.getElementById('toast'),
+  modeLabel: document.getElementById('ai-mode-label'),
+  disclaimer: document.getElementById('demo-disclaimer'),
 };
 
 let conversations = loadConversations();
 let activeId = null;
 let toastTimer;
+let aiMode = 'demo';
+let isSending = false;
+let pendingConversationId = null;
 
 function loadConversations() {
   try {
@@ -143,11 +148,15 @@ function renderSidebar() {
 }
 
 function renderWelcome() {
+  const modeLabel = aiMode === 'live' ? 'Live AI' : 'Demo';
+  const welcomeCopy = aiMode === 'live'
+    ? 'Welcome to QYRON AI. Bring a question, an idea, or a plan you want to think through. English, हिंदी, ya Hinglish — start wherever feels natural. Replies come from the configured AI provider.'
+    : 'Welcome to QYRON AI. Bring a question, an idea, or a plan you want to think through. English, हिंदी, ya Hinglish — start wherever feels natural. This is a demo; replies are examples, not live AI.';
   elements.messages.innerHTML = `
     <div class="welcome">
-      <div class="eyebrow"><span class="eyebrow-line"></span> Your Personal Intelligence · Demo</div>
+      <div class="eyebrow"><span class="eyebrow-line"></span> Your Personal Intelligence · ${modeLabel}</div>
       <h1>Socho, poochho.<br><span>Find your next step.</span></h1>
-      <p class="welcome-copy">Welcome to QYRON AI. Bring a question, an idea, or a plan you want to think through. English, हिंदी, ya Hinglish — start wherever feels natural. This is a demo; replies are examples, not live AI.</p>
+      <p class="welcome-copy">${welcomeCopy}</p>
       <div class="starter-label">Try a starting point / यहाँ से शुरू करें</div>
       <div class="suggestions">
         <button class="suggestion" type="button" data-prompt="Help me turn a rough idea into one small first step."><span>01 / THINK IT THROUGH</span>Help me shape a rough idea</button>
@@ -178,19 +187,23 @@ function renderMessages() {
     renderWelcome();
     return;
   }
-  elements.messages.innerHTML = conversation.messages.map((message) => {
+  const renderedMessages = conversation.messages.map((message) => {
     const isUser = message.role === 'user';
     return `<article class="message ${isUser ? 'user' : 'assistant'}" data-message-id="${escapeHtml(message.id)}">
       ${isUser ? '' : '<span class="message-mark" aria-hidden="true">Q</span>'}
       <div class="message-body">
-        <div class="message-meta">${isUser ? 'YOU' : 'QYRON AI · DEMO REPLY'}</div>
+        <div class="message-meta">${isUser ? 'YOU' : message.demo ? 'QYRON AI · DEMO REPLY' : 'QYRON AI'}</div>
         <div class="message-content ${isUser ? '' : 'reply-content'}">${isUser ? escapeHtml(message.content).replace(/\n/g, '<br>') : formatReply(message.content)}</div>
         ${message.demo ? '<span class="demo-tag">DEMO EXAMPLE · NOT LIVE AI</span>' : ''}
-        <div class="message-tools"><button type="button" class="copy-button" data-copy="${escapeHtml(message.id)}" aria-label="Copy ${isUser ? 'your message' : 'demo reply'}">Copy text</button></div>
+        <div class="message-tools"><button type="button" class="copy-button" data-copy="${escapeHtml(message.id)}" aria-label="Copy ${isUser ? 'your message' : message.demo ? 'demo reply' : 'assistant reply'}">Copy text</button></div>
       </div>
        ${isUser ? '<span class="message-mark" aria-hidden="true">Y</span>' : ''}
     </article>`;
   }).join('');
+  const pendingReply = aiMode === 'live' && isSending && pendingConversationId === conversation.id
+    ? '<article class="message assistant pending-message" aria-label="QYRON AI is responding"><span class="message-mark" aria-hidden="true">Q</span><div class="message-body"><div class="message-meta">QYRON AI</div><div class="message-content reply-content">Thinking…</div></div></article>'
+    : '';
+  elements.messages.innerHTML = `${renderedMessages}${pendingReply}`;
   elements.messages.scrollTop = elements.messages.scrollHeight;
 }
 
@@ -199,9 +212,9 @@ function render() {
   renderMessages();
 }
 
-function sendMessage(content) {
+async function sendMessage(content) {
   const clean = content.trim();
-  if (!clean) return;
+  if (!clean || isSending) return;
   let conversation = conversations.find((item) => item.id === activeId);
   if (!conversation) {
     const now = new Date().toISOString();
@@ -212,20 +225,95 @@ function sendMessage(content) {
   const now = new Date().toISOString();
   if (!conversation.messages.length) conversation.title = clean.replace(/\s+/g, ' ').slice(0, 42) + (clean.length > 42 ? '…' : '');
   conversation.messages.push({ id: makeId(), role: 'user', content: clean, createdAt: now });
-  conversation.messages.push({ id: makeId(), role: 'assistant', content: buildDemoReply(clean), createdAt: new Date(Date.now() + 1).toISOString(), demo: true });
   conversation.updatedAt = now;
   conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   persist();
-  render();
   elements.input.value = '';
+  isSending = true;
+  pendingConversationId = conversation.id;
+  elements.input.disabled = true;
+  resizeInput();
+  render();
+
+  let reply = '';
+  let isDemoReply = true;
+  let showFallbackNotice = false;
+
+  if (aiMode === 'live') {
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          messages: conversation.messages
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .slice(-12)
+            .map(({ role, content: messageContent }) => ({ role, content: messageContent })),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error('AI chat request failed');
+
+      if (result.mode === 'live' && typeof result.reply === 'string' && result.reply.trim()) {
+        reply = result.reply.trim();
+        isDemoReply = false;
+      } else {
+        showFallbackNotice = true;
+        updateAiMode('demo');
+      }
+    } catch {
+      showFallbackNotice = true;
+    }
+  }
+
+  if (!reply) reply = buildDemoReply(clean);
+  conversation.messages.push({
+    id: makeId(),
+    role: 'assistant',
+    content: reply,
+    createdAt: new Date().toISOString(),
+    demo: isDemoReply,
+  });
+  conversation.updatedAt = new Date().toISOString();
+  conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  persist();
+  isSending = false;
+  pendingConversationId = null;
+  render();
+
+  elements.input.disabled = false;
   resizeInput();
   elements.input.focus();
+  if (showFallbackNotice) showToast('AI service unavailable. Using a local demo reply.');
 }
 
 function resizeInput() {
   elements.input.style.height = 'auto';
   elements.input.style.height = `${Math.min(elements.input.scrollHeight, 160)}px`;
-  elements.send.disabled = !elements.input.value.trim();
+  elements.send.disabled = isSending || !elements.input.value.trim();
+}
+
+function updateAiMode(mode) {
+  aiMode = mode;
+  if (mode === 'live') {
+    elements.modeLabel.textContent = 'LIVE AI · CONFIGURED';
+    elements.disclaimer.textContent = 'Live AI mode: messages are sent to the configured provider for replies.';
+  } else {
+    elements.modeLabel.textContent = 'DEMO MODE · NO LIVE AI';
+    elements.disclaimer.innerHTML = '<strong>Demo mode:</strong> QYRON AI is not connected to a live AI. Replies are illustrative only.';
+  }
+  render();
+}
+
+async function loadAiMode() {
+  try {
+    const response = await fetch('/api/ai/status', { cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (!response.ok) return;
+    const status = await response.json();
+    if (status.mode === 'live') updateAiMode('live');
+  } catch {
+    // The local demo stays available when the API server is offline.
+  }
 }
 
 function showToast(message) {
@@ -294,3 +382,4 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeSidebar();
 });
 render();
+void loadAiMode();

@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: ai
+    description: AI assistant operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /ai/status:
+    get:
+      operationId: getAiStatus
+      tags: [ai]
+      summary: Check whether live AI is configured
+      description: Returns whether the server can use its configured AI provider. Never returns credentials.
+      responses:
+        "200":
+          description: AI backend mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiStatusResponse"
+  /ai/chat:
+    post:
+      operationId: createAiChatReply
+      tags: [ai]
+      summary: Generate an assistant reply
+      description: Accepts recent user and assistant messages. Provider credentials remain on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: Live reply or a demo-mode response when no provider is configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatResponse"
+        "400":
+          description: Invalid chat request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Chat request limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider did not return a usable reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +85,53 @@ components:
           type: string
       required:
         - status
+    AiStatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [demo, live]
+      required: [mode]
+    ChatMessage:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 6000
+      required: [role, content]
+    ChatInput:
+      type: object
+      additionalProperties: false
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+      required: [messages]
+    AiChatResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [demo, live]
+        reply:
+          type: ["string", "null"]
+          maxLength: 12000
+      required: [mode, reply]
+    ApiError:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required: [error]
 
