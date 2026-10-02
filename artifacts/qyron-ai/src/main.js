@@ -1,4 +1,5 @@
 import './index.css';
+import { buildDemoReply } from './demo-responses.js';
 
 const STORAGE_KEY = 'qyron-ai-conversations-v1';
 
@@ -196,20 +197,6 @@ function renderMessages() {
 function render() {
   renderSidebar();
   renderMessages();
-}
-
-function buildDemoReply(prompt) {
-  const subject = prompt.trim().replace(/[?.!]+$/, '');
-  const shortSubject = subject.length > 76 ? `${subject.slice(0, 73)}…` : subject;
-  const devanagari = /[\u0900-\u097F]/.test(prompt);
-  const romanHindi = /\b(kya|kaise|kaisa|kaisi|mujhe|mera|meri|mere|hai|hain|ho|karna|karo|batao|samjhao|chahiye|nahi|nahin|accha|acha|kyun|kyu|thoda|madad|shuru|banao|padhai|mein|me|ke|liye|aur|plan)\b/i.test(prompt);
-  if (devanagari) {
-    return `आपने पूछा: **“${shortSubject}”**। इसे आसान बनाने के लिए पूरे काम के बजाय अगले छोटे कदम पर ध्यान दें।\n\nशुरुआत ऐसे करें:\n- **मकसद तय करें।** आप क्या हासिल करना चाहते हैं?\n- **एक छोटी प्राथमिकता चुनें।** अभी सबसे ज़रूरी क्या है?\n- **आज एक कदम उठाएँ।** ऐसा काम चुनें जिसे एक घंटे में पूरा कर सकें।\n\nयह एक उदाहरणात्मक डेमो जवाब है।`;
-  }
-  if (romanHindi) {
-    return `Aapki baat — **“${shortSubject}”** — ko simple banane ke liye poore problem ki jagah ek chhote next step par focus karein.\n\nYeh try karein:\n- **Goal clear karein.** Aap kya achieve karna chahte hain?\n- **Ek priority chunein.** Abhi sabse zaroori kya hai?\n- **Aaj ek chhota action lein.** Aisa step jo ek ghante mein ho sake.\n\nYeh sirf demo reply hai, live AI ka jawab nahi.`;
-  }
-  return `A practical place to start with **“${shortSubject}”** is to make the next move smaller than the whole problem.\n\nTry this:\n- **Name the outcome.** What would be different if this went well?\n- **Choose one priority.** What matters most right now?\n- **Take one small step today.** Pick something you can finish in about an hour.\n\nThis is an illustrative demo reply, not a live AI response.`;
 }
 
 function sendMessage(content) {

@@ -1,1 +1,1 @@
-- [QYRON AI product brief](qyron-ai-product.md) — keep the “Your Personal Intelligence” identity, Hindi/Hinglish support, Android-first layout, and demo-only replies.
+- [QYRON AI product brief](qyron-ai-product.md) — preserve the tagline, Android-first Hindi/Hinglish UI, and local demo replies across learning, coding, business, and chat.
