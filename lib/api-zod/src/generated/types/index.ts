@@ -15,3 +15,4 @@ export * from './chatInput';
 export * from './chatMessage';
 export * from './chatMessageRole';
 export * from './healthStatus';
+export * from './imageGenerationInput';

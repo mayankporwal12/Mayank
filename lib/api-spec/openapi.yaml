@@ -76,6 +76,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /ai/images:
+    post:
+      operationId: createAiImage
+      tags: [ai]
+      summary: Generate an image from a text prompt
+      description: Provider credentials remain on the server. Returns image bytes or an explicit configuration/provider error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageGenerationInput"
+      responses:
+        "200":
+          description: Generated image bytes
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid image-generation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Image-generation request limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Image provider failed or returned an unsupported image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Image generation is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -116,6 +168,15 @@ components:
           items:
             $ref: "#/components/schemas/ChatMessage"
       required: [messages]
+    ImageGenerationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required: [prompt]
     AiChatResponse:
       type: object
       additionalProperties: false

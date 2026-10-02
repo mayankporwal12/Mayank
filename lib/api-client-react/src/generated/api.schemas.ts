@@ -46,6 +46,14 @@ export interface ChatInput {
   messages: ChatMessage[];
 }
 
+export interface ImageGenerationInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  prompt: string;
+}
+
 export type AiChatResponseMode = typeof AiChatResponseMode[keyof typeof AiChatResponseMode];
 
 

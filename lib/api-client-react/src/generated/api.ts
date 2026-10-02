@@ -24,7 +24,8 @@ import type {
   AiStatusResponse,
   ApiError,
   ChatInput,
-  HealthStatus
+  HealthStatus,
+  ImageGenerationInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -297,5 +298,94 @@ export const useCreateAiChatReply = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getCreateAiChatReplyMutationOptions(options));
+    }
+
+export const getCreateAiImageUrl = () => {
+
+
+
+
+  return `/api/ai/images`
+}
+
+/**
+ * Provider credentials remain on the server. Returns image bytes or an explicit configuration/provider error.
+ * @summary Generate an image from a text prompt
+ */
+export const createAiImage = async (imageGenerationInput: ImageGenerationInput, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Blob>(getCreateAiImageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(imageGenerationInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAiImageMutationKey = () => ['createAiImage'] as const;
+
+export const getCreateAiImageMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAiImage>>, TError,CreateAiImageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAiImage>>, TError,CreateAiImageMutationVariables, TContext> => {
+
+const mutationKey = getCreateAiImageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAiImage>>, CreateAiImageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAiImage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAiImageMutationResult = NonNullable<Awaited<ReturnType<typeof createAiImage>>>
+    export type CreateAiImageMutationBody = BodyType<ImageGenerationInput>
+    export type CreateAiImageMutationError = ErrorType<ApiError>
+    export type CreateAiImageMutationVariables = {data: BodyType<ImageGenerationInput>}
+
+    /**
+ * @summary Generate an image from a text prompt
+ */
+export const useCreateAiImage = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAiImage>>, TError,CreateAiImageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAiImage>>,
+        TError,
+        CreateAiImageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateAiImageMutationOptions(options));
     }
 

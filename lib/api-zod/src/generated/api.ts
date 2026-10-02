@@ -53,3 +53,18 @@ export const CreateAiChatReplyResponse = zod.object({
 })
 
 
+/**
+ * Provider credentials remain on the server. Returns image bytes or an explicit configuration/provider error.
+ * @summary Generate an image from a text prompt
+ */
+export const createAiImageBodyPromptMax = 2000;
+
+
+
+export const CreateAiImageBody = zod.object({
+  "prompt": zod.string().min(1).max(createAiImageBodyPromptMax)
+})
+
+export const CreateAiImageResponse = zod.unknown()
+
+
