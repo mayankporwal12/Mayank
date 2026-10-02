@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "QYRON-AI"
+description = "A responsive AI chat interface with a branded experience, conversation controls, and local demo replies that work without an external AI connection."
+version = "1.0.0"
+id = "artifacts/qyron-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19217
+
+[services.development]
+run = "pnpm --filter @workspace/qyron-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/qyron-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/qyron-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19217"
+BASE_PATH = "/"
