@@ -2,6 +2,8 @@ import './index.css';
 import { buildDemoReply } from './demo-responses.js';
 
 const STORAGE_KEY = 'qyron-ai-conversations-v1';
+const SESSION_IMAGE_LIMIT = 8;
+const imageUrls = new Map();
 
 const root = document.getElementById('root');
 root.innerHTML = `
@@ -44,9 +46,15 @@ root.innerHTML = `
              <textarea id="message-input" rows="1" aria-label="Message QYRON AI" placeholder="Ask in English, हिंदी, or Hinglish…"></textarea>
             <div class="composer-bottom">
               <span class="composer-hint">ENTER TO SEND&nbsp; · &nbsp;SHIFT + ENTER FOR A NEW LINE</span>
-              <button class="send-button" id="send-button" type="submit" aria-label="Send message" disabled data-testid="button-send-message">
+              <div class="composer-actions">
+                <button class="image-button" id="image-button" type="button" aria-label="Generate an image from this prompt" disabled data-testid="button-generate-image">
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/><circle cx="7.2" cy="7.5" r="1.2" fill="currentColor"/><path d="m4.5 14 3.8-3.8 2.4 2.4 1.8-1.8 3 3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>Image</span>
+                </button>
+                <button class="send-button" id="send-button" type="submit" aria-label="Send message" disabled data-testid="button-send-message">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 15.7V4.3M5.5 8.8 10 4.3l4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+                </button>
+              </div>
             </div>
           </form>
            <p class="demo-disclaimer" id="demo-disclaimer"><strong>Demo mode:</strong> QYRON AI is not connected to a live AI. Replies are illustrative only.</p>
@@ -63,6 +71,7 @@ const elements = {
   messages: document.getElementById('messages-scroll'),
   input: document.getElementById('message-input'),
   send: document.getElementById('send-button'),
+  image: document.getElementById('image-button'),
   composer: document.getElementById('composer'),
   sidebar: document.getElementById('sidebar'),
   scrim: document.getElementById('mobile-scrim'),
@@ -78,6 +87,7 @@ let toastTimer;
 let aiMode = 'demo';
 let isSending = false;
 let pendingConversationId = null;
+let pendingAction = null;
 
 function loadConversations() {
   try {
@@ -128,6 +138,9 @@ function deleteConversation(id) {
   const item = conversations.find((conversation) => conversation.id === id);
   if (!item) return;
   if (!window.confirm(`Delete “${item.title}”? This cannot be undone.`)) return;
+  item.messages.forEach((message) => {
+    if (message.imageResultId) forgetImageResult(message.imageResultId);
+  });
   conversations = conversations.filter((conversation) => conversation.id !== id);
   if (activeId === id) activeId = null;
   persist();
@@ -189,19 +202,27 @@ function renderMessages() {
   }
   const renderedMessages = conversation.messages.map((message) => {
     const isUser = message.role === 'user';
+    const imageUrl = message.imageResultId ? imageUrls.get(message.imageResultId) : null;
+    const content = isUser
+      ? escapeHtml(message.content).replace(/\n/g, '<br>')
+      : message.imageResultId
+        ? imageUrl
+          ? `<figure class="generated-image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(message.imagePrompt || 'Generated image')}" loading="lazy"><figcaption>Generated image</figcaption></figure>`
+          : '<p class="image-preview-unavailable">This image preview is only available in the current session. Image files are not saved in conversation history.</p>'
+        : formatReply(message.content);
     return `<article class="message ${isUser ? 'user' : 'assistant'}" data-message-id="${escapeHtml(message.id)}">
       ${isUser ? '' : '<span class="message-mark" aria-hidden="true">Q</span>'}
       <div class="message-body">
-        <div class="message-meta">${isUser ? 'YOU' : message.demo ? 'QYRON AI · DEMO REPLY' : 'QYRON AI'}</div>
-        <div class="message-content ${isUser ? '' : 'reply-content'}">${isUser ? escapeHtml(message.content).replace(/\n/g, '<br>') : formatReply(message.content)}</div>
+        <div class="message-meta">${isUser ? 'YOU' : message.imageResultId ? 'QYRON AI · IMAGE' : message.demo ? 'QYRON AI · DEMO REPLY' : 'QYRON AI'}</div>
+        <div class="message-content ${isUser ? '' : 'reply-content'} ${message.imageGenerationError ? 'image-generation-error' : ''}">${content}</div>
         ${message.demo ? '<span class="demo-tag">DEMO EXAMPLE · NOT LIVE AI</span>' : ''}
         <div class="message-tools"><button type="button" class="copy-button" data-copy="${escapeHtml(message.id)}" aria-label="Copy ${isUser ? 'your message' : message.demo ? 'demo reply' : 'assistant reply'}">Copy text</button></div>
       </div>
        ${isUser ? '<span class="message-mark" aria-hidden="true">Y</span>' : ''}
     </article>`;
   }).join('');
-  const pendingReply = aiMode === 'live' && isSending && pendingConversationId === conversation.id
-    ? '<article class="message assistant pending-message" aria-label="QYRON AI is responding"><span class="message-mark" aria-hidden="true">Q</span><div class="message-body"><div class="message-meta">QYRON AI</div><div class="message-content reply-content">Thinking…</div></div></article>'
+  const pendingReply = isSending && pendingConversationId === conversation.id
+    ? `<article class="message assistant pending-message" aria-label="QYRON AI is responding"><span class="message-mark" aria-hidden="true">Q</span><div class="message-body"><div class="message-meta">QYRON AI</div><div class="message-content reply-content">${pendingAction === 'image' ? 'Generating image…' : 'Thinking…'}</div></div></article>`
     : '';
   elements.messages.innerHTML = `${renderedMessages}${pendingReply}`;
   elements.messages.scrollTop = elements.messages.scrollHeight;
@@ -231,6 +252,7 @@ async function sendMessage(content) {
   elements.input.value = '';
   isSending = true;
   pendingConversationId = conversation.id;
+  pendingAction = 'chat';
   elements.input.disabled = true;
   resizeInput();
   render();
@@ -279,6 +301,7 @@ async function sendMessage(content) {
   persist();
   isSending = false;
   pendingConversationId = null;
+  pendingAction = null;
   render();
 
   elements.input.disabled = false;
@@ -287,10 +310,100 @@ async function sendMessage(content) {
   if (showFallbackNotice) showToast('AI service unavailable. Using a local demo reply.');
 }
 
+function forgetImageResult(imageId) {
+  const imageUrl = imageUrls.get(imageId);
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  imageUrls.delete(imageId);
+}
+
+async function generateImageFromPrompt(content) {
+  const clean = content.trim();
+  if (!clean || isSending) return;
+
+  let conversation = conversations.find((item) => item.id === activeId);
+  if (!conversation) {
+    const now = new Date().toISOString();
+    conversation = { id: makeId(), title: clean.replace(/\s+/g, ' ').slice(0, 42) || 'New conversation', createdAt: now, updatedAt: now, messages: [] };
+    conversations.unshift(conversation);
+    activeId = conversation.id;
+  }
+
+  const now = new Date().toISOString();
+  if (!conversation.messages.length) conversation.title = clean.replace(/\s+/g, ' ').slice(0, 42) + (clean.length > 42 ? '…' : '');
+  conversation.messages.push({ id: makeId(), role: 'user', content: clean, createdAt: now });
+  conversation.updatedAt = now;
+  conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  persist();
+
+  elements.input.value = '';
+  isSending = true;
+  pendingAction = 'image';
+  pendingConversationId = conversation.id;
+  elements.input.disabled = true;
+  resizeInput();
+  render();
+
+  try {
+    const response = await fetch('/api/ai/images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'image/png, image/jpeg, image/webp, application/json' },
+      body: JSON.stringify({ prompt: clean }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(typeof result?.error === 'string' ? result.error : 'Image generation failed.');
+    }
+
+    const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) {
+      throw new Error('Image provider returned an unsupported image.');
+    }
+    const blob = await response.blob();
+    if (blob.size === 0 || blob.size > 8 * 1024 * 1024) {
+      throw new Error('Image provider returned an unsupported image.');
+    }
+
+    const imageId = makeId();
+    imageUrls.set(imageId, URL.createObjectURL(blob));
+    while (imageUrls.size > SESSION_IMAGE_LIMIT) {
+      forgetImageResult(imageUrls.keys().next().value);
+    }
+    conversation.messages.push({
+      id: makeId(),
+      role: 'assistant',
+      content: `Generated image for: ${clean}`,
+      imageResultId: imageId,
+      imagePrompt: clean,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    conversation.messages.push({
+      id: makeId(),
+      role: 'assistant',
+      content: error instanceof Error ? error.message : 'Image generation failed.',
+      imageGenerationError: true,
+      createdAt: new Date().toISOString(),
+    });
+  } finally {
+    conversation.updatedAt = new Date().toISOString();
+    conversations = [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    persist();
+    isSending = false;
+    pendingAction = null;
+    pendingConversationId = null;
+    elements.input.disabled = false;
+    render();
+    resizeInput();
+    elements.input.focus();
+  }
+}
+
 function resizeInput() {
   elements.input.style.height = 'auto';
   elements.input.style.height = `${Math.min(elements.input.scrollHeight, 160)}px`;
   elements.send.disabled = isSending || !elements.input.value.trim();
+  elements.image.disabled = isSending || !elements.input.value.trim();
 }
 
 function updateAiMode(mode) {
@@ -364,6 +477,7 @@ elements.composer.addEventListener('submit', (event) => {
   event.preventDefault();
   sendMessage(elements.input.value);
 });
+elements.image.addEventListener('click', () => generateImageFromPrompt(elements.input.value));
 elements.input.addEventListener('input', resizeInput);
 elements.input.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
