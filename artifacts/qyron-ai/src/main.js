@@ -1,17 +1,23 @@
-import './index.css';
 import { buildDemoReply } from './demo-responses.js';
 
-const STORAGE_KEY = 'qyron-ai-conversations-v1';
+const STORAGE_KEY_PREFIX = 'qyron-ai-conversations-v1';
 const SESSION_IMAGE_LIMIT = 8;
-const imageUrls = new Map();
 
-const root = document.getElementById('root');
+export function mountQyronChat(root, { userId, userName, onLogout } = {}) {
+if (!(root instanceof HTMLElement)) throw new Error('QYRON chat needs a mount element.');
+if (typeof userId !== 'string' || !userId) throw new Error('A signed-in user is required to mount QYRON chat.');
+if (typeof onLogout !== 'function') throw new Error('QYRON chat needs a logout handler.');
+
+const storageKey = `${STORAGE_KEY_PREFIX}:${encodeURIComponent(userId)}`;
+const imageUrls = new Map();
+const displayName = String(userName || '').trim() || 'Your account';
+
 root.innerHTML = `
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Conversation history">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><i></i></span>
-         <div><div class="brand-name">QYRON AI</div><div class="brand-tag">Your Personal Intelligence</div></div>
+         <div><div class="brand-name">QYRON AI</div><div class="brand-tag">Intelligence, Reimagined.</div></div>
       </div>
       <button class="new-chat" id="new-chat" type="button" data-testid="button-new-chat">
         <span class="plus-icon" aria-hidden="true">+</span><span>New conversation</span>
@@ -32,12 +38,18 @@ root.innerHTML = `
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           </button>
            <span class="workspace-label">QYRON AI · PERSONAL CHAT</span>
-           <span class="mobile-brand" aria-label="QYRON AI — Your Personal Intelligence">
+           <span class="mobile-brand" aria-label="QYRON AI — Intelligence, Reimagined.">
              <span class="mobile-brand-name">QYRON AI</span>
-             <span class="mobile-brand-tag">Your Personal Intelligence</span>
+             <span class="mobile-brand-tag">Intelligence, Reimagined.</span>
            </span>
         </div>
-        <div class="top-status"><span class="status-dot"></span><span id="ai-mode-label">DEMO MODE · NO LIVE AI</span></div>
+         <div class="top-right">
+           <div class="top-status"><span class="status-dot"></span><span id="ai-mode-label">DEMO MODE · NO LIVE AI</span></div>
+           <div class="chat-account-actions">
+             <span class="chat-account-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
+             <button class="chat-logout" id="chat-logout" type="button" data-testid="button-logout">Log out</button>
+           </div>
+         </div>
       </header>
       <section class="conversation-stage" aria-label="Chat conversation">
         <div class="messages-scroll" id="messages-scroll" aria-live="polite"></div>
@@ -66,19 +78,20 @@ root.innerHTML = `
 `;
 
 const elements = {
-  list: document.getElementById('conversation-list'),
-  count: document.getElementById('thread-count'),
-  messages: document.getElementById('messages-scroll'),
-  input: document.getElementById('message-input'),
-  send: document.getElementById('send-button'),
-  image: document.getElementById('image-button'),
-  composer: document.getElementById('composer'),
-  sidebar: document.getElementById('sidebar'),
-  scrim: document.getElementById('mobile-scrim'),
-  menu: document.getElementById('mobile-menu'),
-  toast: document.getElementById('toast'),
-  modeLabel: document.getElementById('ai-mode-label'),
-  disclaimer: document.getElementById('demo-disclaimer'),
+  list: root.querySelector('#conversation-list'),
+  count: root.querySelector('#thread-count'),
+  messages: root.querySelector('#messages-scroll'),
+  input: root.querySelector('#message-input'),
+  send: root.querySelector('#send-button'),
+  image: root.querySelector('#image-button'),
+  composer: root.querySelector('#composer'),
+  sidebar: root.querySelector('#sidebar'),
+  scrim: root.querySelector('#mobile-scrim'),
+  menu: root.querySelector('#mobile-menu'),
+  toast: root.querySelector('#toast'),
+  modeLabel: root.querySelector('#ai-mode-label'),
+  disclaimer: root.querySelector('#demo-disclaimer'),
+  logout: root.querySelector('#chat-logout'),
 };
 
 let conversations = loadConversations();
@@ -91,7 +104,7 @@ let pendingAction = null;
 
 function loadConversations() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
     return Array.isArray(saved) ? saved.filter((item) => item && item.id && Array.isArray(item.messages)) : [];
   } catch {
     return [];
@@ -100,7 +113,7 @@ function loadConversations() {
 
 function persist() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    localStorage.setItem(storageKey, JSON.stringify(conversations));
   } catch {
     showToast('Could not save locally. Browser storage may be full.');
   }
@@ -167,7 +180,7 @@ function renderWelcome() {
     : 'Welcome to QYRON AI. Bring a question, an idea, or a plan you want to think through. English, हिंदी, ya Hinglish — start wherever feels natural. This is a demo; replies are examples, not live AI.';
   elements.messages.innerHTML = `
     <div class="welcome">
-      <div class="eyebrow"><span class="eyebrow-line"></span> Your Personal Intelligence · ${modeLabel}</div>
+      <div class="eyebrow"><span class="eyebrow-line"></span> Intelligence, Reimagined. · ${modeLabel}</div>
       <h1>Socho, poochho.<br><span>Find your next step.</span></h1>
       <p class="welcome-copy">${welcomeCopy}</p>
       <div class="starter-label">Try a starting point / यहाँ से शुरू करें</div>
@@ -485,15 +498,26 @@ elements.input.addEventListener('keydown', (event) => {
     if (elements.input.value.trim()) sendMessage(elements.input.value);
   }
 });
-document.getElementById('new-chat').addEventListener('click', startConversation);
+root.querySelector('#new-chat').addEventListener('click', startConversation);
 elements.menu.addEventListener('click', () => elements.sidebar.classList.contains('open') ? closeSidebar() : openSidebar());
 elements.scrim.addEventListener('click', closeSidebar);
-document.addEventListener('keydown', (event) => {
+elements.logout.addEventListener('click', onLogout);
+function handleDocumentKeydown(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     startConversation();
   }
   if (event.key === 'Escape') closeSidebar();
-});
+}
+document.addEventListener('keydown', handleDocumentKeydown);
 render();
 void loadAiMode();
+
+return () => {
+  document.removeEventListener('keydown', handleDocumentKeydown);
+  clearTimeout(toastTimer);
+  imageUrls.forEach((url) => URL.revokeObjectURL(url));
+  imageUrls.clear();
+  root.replaceChildren();
+};
+}
